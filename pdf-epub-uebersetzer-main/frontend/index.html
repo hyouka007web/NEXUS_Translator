@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF & EPUB Übersetzer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8e9ec;
+    --muted: #8b92a3;
+    --accent: #5b8cff;
+    --accent-hover: #4574f5;
+    --ok: #3ecf8e;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .container { width: 100%; max-width: 560px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .lang-row { display: flex; gap: 12px; margin-bottom: 16px; }
+  .lang-row select, select.app-select {
+    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #10131a;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  #dropzone, #splitDropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 36px 16px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #dropzone.dragover, #splitDropzone.dragover { border-color: var(--accent); background: rgba(91,140,255,0.08); }
+  #dropzone strong, #splitDropzone strong { color: var(--text); }
+  #fileInput, #splitFileInput { display: none; }
+
+  .tab-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .tab-btn.tab-active { background: var(--accent); color: white; border-color: var(--accent); }
+
+  #fileListDisplay { margin-top: 10px; font-size: 0.9rem; }
+  .pending-file {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pending-file:last-child { border-bottom: none; }
+  .pending-file .remove-btn {
+    color: var(--err);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 2px 8px;
+  }
+
+  button#translateBtn, button#splitBtn {
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button#translateBtn:hover, button#splitBtn:hover { background: var(--accent-hover); }
+  button#translateBtn:disabled, button#splitBtn:disabled { background: #3a3f4d; cursor: not-allowed; }
+
+  .job-card .job-filename {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    word-break: break-word;
+  }
+  .progress-bar-bg {
+    width: 100%;
+    height: 10px;
+    background: #10131a;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 10px 0;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .status-text { font-size: 0.9rem; color: var(--muted); }
+  .status-text.ok { color: var(--ok); }
+  .status-text.err { color: var(--err); }
+
+  a.download-link {
+    display: none;
+    margin-top: 12px;
+    text-align: center;
+    background: var(--ok);
+    color: #06120c;
+    font-weight: 600;
+    padding: 12px;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+
+  .job-card { position: relative; padding-right: 40px; }
+  .job-cancel-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: #10131a;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .job-cancel-btn:hover { background: var(--err); color: white; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 360px;
+    width: 100%;
+  }
+  .modal-box p { margin: 0 0 18px; font-size: 0.95rem; line-height: 1.4; }
+  .modal-box .modal-filename { color: var(--muted); font-size: 0.85rem; margin-top: -12px; margin-bottom: 14px; word-break: break-word; }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .modal-actions .btn-confirm { background: var(--err); color: white; }
+  .modal-actions .btn-cancel { background: #2a2e38; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>PDF & EPUB Übersetzer</h1>
+  <div class="subtitle">Läuft komplett lokal auf diesem Gerät – kein Upload ins Internet. Mehrere Dateien laufen gleichzeitig im Hintergrund.</div>
+
+  <div class="tab-row">
+    <button type="button" id="tabTranslateBtn" class="tab-btn tab-active">Übersetzen</button>
+    <button type="button" id="tabSplitBtn" class="tab-btn">Teilen</button>
+  </div>
+
+  <div id="translatePanel">
+  <div class="panel">
+    <div class="lang-row">
+      <select id="fromLang">
+        <option value="de">Deutsch</option>
+        <option value="en">Englisch</option>
+        <option value="fr">Französisch</option>
+        <option value="ja">Japanisch</option>
+      </select>
+      <select id="toLang">
+        <option value="en">Englisch</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Französisch</option>
+        <option value="ja">Japanisch</option>
+      </select>
+    </div>
+
+    <div style="margin-top:14px;">
+      <input id="projectName" type="text" placeholder="Projektname (optional, z.B. Mein Roman)" style="width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid var(--border);background:#10131a;color:var(--text);">
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:6px;">Projektmodus merkt sich Sprache, Glossar und Übersetzungsfortschritt.</div>
+    </div>
+
+    <div id="dropzone">
+      <div><strong>PDF oder EPUB hierher ziehen</strong> oder tippen zum Auswählen (auch mehrere gleichzeitig)</div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.epub" multiple>
+    <div id="fileListDisplay"></div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:0.85rem;color:var(--muted);">
+      <input type="checkbox" id="grammarCheck" style="width:16px;height:16px;">
+      Satzbau-Politur (zweiter Google-Durchlauf über Zwischensprache, kostenlos, aber spürbar langsamer)
+    </label>
+
+    <button id="translateBtn" disabled>Übersetzung(en) starten</button>
+  </div>
+
+  <div id="jobsContainer"></div>
+  </div>
+
+  <div id="splitPanel" style="display:none;">
+    <div class="panel">
+      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:14px;">
+        Datei hochladen, dann Start- und End-Seite (bei EPUB: Start-/End-Abschnitt) wählen – du bekommst eine neue Datei, die nur diesen Bereich enthält.
+      </div>
+
+      <div id="splitDropzone">
+        <div><strong>PDF oder EPUB hierher ziehen</strong> oder tippen zum Auswählen</div>
+      </div>
+      <input type="file" id="splitFileInput" accept=".pdf,.epub">
+      <div id="splitFileName" style="margin-top:10px;font-size:0.9rem;color:var(--muted);"></div>
+
+      <div id="splitRangeRow" style="display:none;margin-top:16px;">
+        <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;" id="splitUnitInfo"></div>
+        <div style="display:flex;gap:12px;align-items:center;">
+          <div style="flex:1;">
+            <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:4px;">Von</label>
+            <input type="number" id="splitStart" min="1" value="1" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid var(--border);background:#10131a;color:var(--text);font-size:0.95rem;">
+          </div>
+          <div style="flex:1;">
+            <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:4px;">Bis</label>
+            <input type="number" id="splitEnd" min="1" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid var(--border);background:#10131a;color:var(--text);font-size:0.95rem;">
+          </div>
+        </div>
+        <button id="splitBtn" style="margin-top:14px;">Teil erstellen &amp; herunterladen</button>
+        <div id="splitStatus" style="margin-top:10px;font-size:0.85rem;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cancelModal">
+  <div class="modal-box">
+    <p>Möchten Sie diese PDF löschen oder die Übersetzung abbrechen?</p>
+    <div class="modal-filename" id="cancelModalFilename"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelModalBack">Zurück</button>
+      <button class="btn-confirm" id="cancelModalConfirm">Ja, abbrechen &amp; löschen</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const tabTranslateBtn = document.getElementById('tabTranslateBtn');
+const tabSplitBtn = document.getElementById('tabSplitBtn');
+const translatePanel = document.getElementById('translatePanel');
+const splitPanel = document.getElementById('splitPanel');
+
+tabTranslateBtn.addEventListener('click', () => {
+  tabTranslateBtn.classList.add('tab-active');
+  tabSplitBtn.classList.remove('tab-active');
+  translatePanel.style.display = '';
+  splitPanel.style.display = 'none';
+});
+tabSplitBtn.addEventListener('click', () => {
+  tabSplitBtn.classList.add('tab-active');
+  tabTranslateBtn.classList.remove('tab-active');
+  splitPanel.style.display = '';
+  translatePanel.style.display = 'none';
+});
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const fileListDisplay = document.getElementById('fileListDisplay');
+const grammarCheckbox = document.getElementById('grammarCheck');
+const translateBtn = document.getElementById('translateBtn');
+const fromLangSel = document.getElementById('fromLang');
+const toLangSel = document.getElementById('toLang');
+
+const jobsContainer = document.getElementById('jobsContainer');
+const cancelModal = document.getElementById('cancelModal');
+const cancelModalFilename = document.getElementById('cancelModalFilename');
+const cancelModalBack = document.getElementById('cancelModalBack');
+const cancelModalConfirm = document.getElementById('cancelModalConfirm');
+
+let pendingCancelTarget = null; // { jobId, card } - während das Modal offen ist
+
+function openCancelModal(jobId, card) {
+  pendingCancelTarget = { jobId, card };
+  cancelModalFilename.textContent = card.nameEl.textContent;
+  cancelModal.classList.add('open');
+}
+function closeCancelModal() {
+  pendingCancelTarget = null;
+  cancelModal.classList.remove('open');
+}
+cancelModalBack.addEventListener('click', closeCancelModal);
+cancelModal.addEventListener('click', (e) => {
+  if (e.target === cancelModal) closeCancelModal(); // Klick auf dunklen Hintergrund = Abbrechen
+});
+cancelModalConfirm.addEventListener('click', async () => {
+  if (!pendingCancelTarget) return;
+  const { jobId, card } = pendingCancelTarget;
+  closeCancelModal();
+  await requestCancelJob(jobId, card);
+});
+
+async function requestCancelJob(jobId, card) {
+  card.statusText.textContent = 'Wird abgebrochen...';
+  card.statusText.className = 'status-text';
+  try {
+    const res = await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+    const data = await res.json();
+    removeStoredJobId(jobId);
+    if (data.status === 'deleted') {
+      // Job war noch nicht gestartet oder schon fertig/fehlgeschlagen -
+      // sofort entfernt, kein weiteres Warten nötig.
+      clearInterval(card._pollTimer);
+      card.panel.remove();
+    }
+    // Bei "cancelling" läuft noch eine Seite/Kapitel zu Ende - das normale
+    // Polling (pollStatus) erkennt den Status "cancelled" von selbst und
+    // räumt dann auf (siehe checkOnce).
+  } catch (err) {
+    card.statusText.textContent = 'Abbrechen fehlgeschlagen: ' + err.message;
+    card.statusText.className = 'status-text err';
+  }
+}
+
+let pendingFiles = []; // noch nicht hochgeladene, ausgewählte Dateien
+const JOBS_STORAGE_KEY = 'pdfTranslatorActiveJobIds'; // JSON-Array von Job-IDs
+
+// Wichtig zu wissen: Jede Übersetzung läuft im Hintergrund auf dem Server
+// (Termux), NICHT im Browser-Tab, und mehrere Dateien laufen dabei parallel.
+// Ein Neuladen oder Schließen des Browsers stoppt die Übersetzungen selbst
+// also nicht - nur die Anzeige "vergisst" sonst, welche Jobs gerade laufen.
+// Das hier merkt sich alle laufenden Jobs und verbindet beim nächsten
+// Öffnen automatisch wieder mit jedem einzelnen.
+window.addEventListener('DOMContentLoaded', () => {
+  const savedIds = JSON.parse(localStorage.getItem(JOBS_STORAGE_KEY) || '[]');
+  savedIds.forEach(jobId => reconnectJob(jobId));
+});
+
+function getStoredJobIds() {
+  return JSON.parse(localStorage.getItem(JOBS_STORAGE_KEY) || '[]');
+}
+function addStoredJobId(jobId) {
+  const ids = getStoredJobIds();
+  if (!ids.includes(jobId)) {
+    ids.push(jobId);
+    localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(ids));
+  }
+}
+function removeStoredJobId(jobId) {
+  const ids = getStoredJobIds().filter(id => id !== jobId);
+  localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(ids));
+}
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => {
+  handleFiles(fileInput.files);
+  fileInput.value = ''; // erlaubt erneutes Auswählen derselben Datei
+});
+
+function handleFiles(fileList) {
+  let rejected = false;
+  for (const file of fileList) {
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.pdf') && !name.endsWith('.epub')) {
+      rejected = true;
+      continue;
+    }
+    // Duplikate (gleicher Name + gleiche Größe) nicht doppelt hinzufügen
+    if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) continue;
+    pendingFiles.push(file);
+  }
+  if (rejected) alert('Nur PDF- oder EPUB-Dateien werden unterstützt - andere Dateien wurden übersprungen.');
+  renderPendingFiles();
+}
+
+function renderPendingFiles() {
+  fileListDisplay.innerHTML = '';
+  pendingFiles.forEach((file, idx) => {
+    const row = document.createElement('div');
+    row.className = 'pending-file';
+    const label = document.createElement('span');
+    label.textContent = file.name;
+    const removeBtn = document.createElement('span');
+    removeBtn.className = 'remove-btn';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', () => {
+      pendingFiles.splice(idx, 1);
+      renderPendingFiles();
+    });
+    row.appendChild(label);
+    row.appendChild(removeBtn);
+    fileListDisplay.appendChild(row);
+  });
+  translateBtn.disabled = pendingFiles.length === 0;
+}
+
+translateBtn.addEventListener('click', async () => {
+  const filesToUpload = pendingFiles;
+  pendingFiles = [];
+  renderPendingFiles();
+
+  const fromLang = fromLangSel.value;
+  const toLang = toLangSel.value;
+  const grammarCheck = grammarCheckbox.checked;
+  const projectName = document.getElementById('projectName').value.trim();
+
+  // Alle ausgewählten Dateien GLEICHZEITIG hochladen und starten (nicht
+  // nacheinander warten) - der Server verarbeitet sie dann parallel im
+  // Hintergrund.
+  filesToUpload.forEach(file => uploadAndTrack(file, fromLang, toLang, grammarCheck, projectName));
+});
+
+async function uploadAndTrack(file, fromLang, toLang, grammarCheck, projectName = "") {
+  const card = createJobCard(file.name, 'pdf oder epub');
+  card.statusText.textContent = 'Lade Datei hoch...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('from_lang', fromLang);
+  formData.append('to_lang', toLang);
+  formData.append('grammar_check', grammarCheck ? 'true' : 'false');
+  if (projectName) formData.append('project_name', projectName);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error('Upload fehlgeschlagen');
+    const data = await res.json();
+    card._jobId = data.job_id;
+    addStoredJobId(data.job_id);
+    pollStatus(data.job_id, card);
+  } catch (err) {
+    card.statusText.textContent = 'Fehler: ' + err.message;
+    card.statusText.className = 'status-text err';
+  }
+}
+
+async function reconnectJob(jobId) {
+  const card = createJobCard('Wird geladen...', '');
+  card._jobId = jobId;
+  card.statusText.textContent = 'Verbinde mit laufender Übersetzung...';
+  // Dateiname nachträglich vom Server holen, sobald der erste Status da ist
+  pollStatus(jobId, card, true);
+}
+
+function createJobCard(filename, fileTypeHint) {
+  const panel = document.createElement('div');
+  panel.className = 'panel job-card';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'job-cancel-btn';
+  cancelBtn.textContent = '✕';
+  cancelBtn.title = 'Übersetzung abbrechen / Datei löschen';
+  panel.appendChild(cancelBtn);
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'job-filename';
+  nameEl.textContent = filename;
+
+  const barBg = document.createElement('div');
+  barBg.className = 'progress-bar-bg';
+  const barFill = document.createElement('div');
+  barFill.className = 'progress-bar-fill';
+  barBg.appendChild(barFill);
+
+  const statusText = document.createElement('div');
+  statusText.className = 'status-text';
+
+  const downloadLink = document.createElement('a');
+  downloadLink.className = 'download-link';
+  downloadLink.textContent = 'Datei herunterladen';
+
+  panel.appendChild(nameEl);
+  panel.appendChild(barBg);
+  panel.appendChild(statusText);
+  panel.appendChild(downloadLink);
+  jobsContainer.prepend(panel);
+
+  const card = { panel, nameEl, progressFill: barFill, statusText, downloadLink };
+  cancelBtn.addEventListener('click', () => openCancelModal(card._jobId, card));
+  return card;
+}
+
+function pollStatus(jobId, card, isReconnect = false) {
+  let consecutiveFailures = 0;
+  // Ein einzelner fehlgeschlagener Abruf (kurzer WLAN-Hänger, Bildschirm
+  // aus, Tab pausiert) darf das Polling NICHT sofort beenden - das zwang
+  // vorher zum manuellen Neuladen bei jeder kleinen Netzwerk-Unterbrechung.
+  // Erst nach mehreren Fehlversuchen IN FOLGE gehen wir wirklich von einem
+  // Verbindungsabbruch aus.
+  const MAX_CONSECUTIVE_FAILURES = 5;
+
+  const checkOnce = async () => {
+    try {
+      const res = await fetch(`/api/status/${jobId}`);
+      consecutiveFailures = 0; // jeder erfolgreiche Abruf setzt den Zähler zurück
+
+      if (!res.ok) {
+        clearInterval(card._pollTimer);
+        removeStoredJobId(jobId);
+        card.statusText.textContent = 'Diese Übersetzung ist dem Server nicht mehr bekannt (der Server wurde vermutlich neu gestartet). Bei PDFs findest du bereits übersetzte Seiten trotzdem im outputs-Ordner.';
+        card.statusText.className = 'status-text err';
+        return;
+      }
+      const job = await res.json();
+
+      if (isReconnect && job.filename) {
+        card.nameEl.textContent = job.filename;
+      }
+
+      if (job.progress && job.progress.pages_total > 0) {
+        const pct = Math.round((job.progress.pages_done / job.progress.pages_total) * 100);
+        card.progressFill.style.width = pct + '%';
+        const unit = (job.file_type === 'epub') ? 'Kapitel-Datei' : 'Seite';
+        let txt = `${unit} ${job.progress.pages_done} von ${job.progress.pages_total} verarbeitet...`;
+        if (job.progress.pages_failed) {
+          txt += ` (${job.progress.pages_failed} davon unübersetzt übernommen wegen Fehler)`;
+        }
+        card.statusText.textContent = txt;
+      } else {
+        card.statusText.textContent = 'Verarbeitung läuft...';
+      }
+
+      if (job.status === 'done') {
+        clearInterval(card._pollTimer);
+        removeStoredJobId(jobId);
+        card.progressFill.style.width = '100%';
+        card.statusText.textContent = 'Fertig!';
+        card.statusText.className = 'status-text ok';
+        card.downloadLink.href = `/api/download/${jobId}`;
+        card.downloadLink.style.display = 'block';
+      } else if (job.status === 'cancelled') {
+        // Abbruch wurde bestätigt und der Hintergrund-Thread hat sich
+        // inzwischen beendet - jetzt Dateien endgültig aufräumen und die
+        // Karte aus der Liste entfernen.
+        clearInterval(card._pollTimer);
+        removeStoredJobId(jobId);
+        try { await fetch(`/api/job/${jobId}`, { method: 'DELETE' }); } catch (e) {}
+        card.panel.remove();
+      } else if (job.status === 'error') {
+        clearInterval(card._pollTimer);
+        removeStoredJobId(jobId);
+        if (job.file_type === 'epub') {
+          card.statusText.textContent = 'Unterbrochen: ' + job.error + ' (bei EPUB gibt es leider keinen Teil-Download - bitte erneut starten)';
+          card.statusText.className = 'status-text err';
+        } else {
+          card.statusText.textContent = 'Unterbrochen: ' + job.error + ' (bisher fertige Seiten kannst du trotzdem herunterladen)';
+          card.statusText.className = 'status-text err';
+          card.downloadLink.href = `/api/download/${jobId}`;
+          card.downloadLink.textContent = 'Teilweise übersetzte PDF herunterladen';
+          card.downloadLink.style.display = 'block';
+        }
+      }
+    } catch (err) {
+      consecutiveFailures++;
+      if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+        // Stiller Wiederholungsversuch beim nächsten Intervall-Tick, ohne
+        // die Nutzeroberfläche mit Fehlermeldungen zu beunruhigen.
+        card.statusText.textContent = `Verbindung wackelt (Versuch ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})... übersetze weiter im Hintergrund.`;
+        return;
+      }
+      clearInterval(card._pollTimer);
+      card.statusText.textContent = 'Verbindung wirklich verloren. Lade die Seite neu - läuft die Übersetzung noch, verbindest du dich automatisch wieder.';
+      card.statusText.className = 'status-text err';
+    }
+  };
+
+  checkOnce(); // sofort einmal prüfen, nicht erst nach 1,5 Sekunden
+  card._pollTimer = setInterval(checkOnce, 1500);
+}
+
+// ---------------------------------------------------------------------
+// Splitter-Tab
+// ---------------------------------------------------------------------
+const splitDropzone = document.getElementById('splitDropzone');
+const splitFileInput = document.getElementById('splitFileInput');
+const splitFileName = document.getElementById('splitFileName');
+const splitRangeRow = document.getElementById('splitRangeRow');
+const splitUnitInfo = document.getElementById('splitUnitInfo');
+const splitStartInput = document.getElementById('splitStart');
+const splitEndInput = document.getElementById('splitEnd');
+const splitBtn = document.getElementById('splitBtn');
+const splitStatus = document.getElementById('splitStatus');
+
+let currentSplitId = null;
+let currentSplitUnitLabel = 'Seite';
+let currentSplitTotal = 0;
+
+splitDropzone.addEventListener('click', () => splitFileInput.click());
+splitDropzone.addEventListener('dragover', (e) => { e.preventDefault(); splitDropzone.classList.add('dragover'); });
+splitDropzone.addEventListener('dragleave', () => splitDropzone.classList.remove('dragover'));
+splitDropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  splitDropzone.classList.remove('dragover');
+  if (e.dataTransfer.files.length > 0) handleSplitFile(e.dataTransfer.files[0]);
+});
+splitFileInput.addEventListener('change', () => {
+  if (splitFileInput.files.length > 0) handleSplitFile(splitFileInput.files[0]);
+  splitFileInput.value = '';
+});
+
+async function handleSplitFile(file) {
+  const name = file.name.toLowerCase();
+  if (!name.endsWith('.pdf') && !name.endsWith('.epub')) {
+    alert('Nur PDF- oder EPUB-Dateien werden unterstützt.');
+    return;
+  }
+
+  splitFileName.textContent = `Analysiere "${file.name}"...`;
+  splitRangeRow.style.display = 'none';
+  splitStatus.textContent = '';
+  currentSplitId = null;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/split/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Datei konnte nicht analysiert werden.');
+    }
+    const data = await res.json();
+    currentSplitId = data.split_id;
+    currentSplitUnitLabel = data.unit_label;
+    currentSplitTotal = data.total_units;
+
+    splitFileName.textContent = `"${file.name}" - ${currentSplitTotal} ${currentSplitUnitLabel}(n) insgesamt`;
+    splitUnitInfo.textContent = `${currentSplitUnitLabel} von / bis wählen (1 bis ${currentSplitTotal}):`;
+    splitStartInput.min = 1;
+    splitStartInput.max = currentSplitTotal;
+    splitStartInput.value = 1;
+    splitEndInput.min = 1;
+    splitEndInput.max = currentSplitTotal;
+    splitEndInput.value = currentSplitTotal;
+    splitRangeRow.style.display = 'block';
+  } catch (err) {
+    splitFileName.textContent = 'Fehler: ' + err.message;
+  }
+}
+
+splitBtn.addEventListener('click', async () => {
+  if (!currentSplitId) return;
+
+  const start = parseInt(splitStartInput.value, 10);
+  const end = parseInt(splitEndInput.value, 10);
+
+  if (!start || !end || start < 1 || end < start || end > currentSplitTotal) {
+    splitStatus.textContent = `Ungültiger Bereich (1 bis ${currentSplitTotal} erlaubt, "Von" darf nicht größer als "Bis" sein).`;
+    splitStatus.className = 'status-text err';
+    return;
+  }
+
+  splitBtn.disabled = true;
+  splitStatus.textContent = 'Erstelle Ausschnitt...';
+  splitStatus.className = 'status-text';
+
+  const formData = new FormData();
+  formData.append('split_id', currentSplitId);
+  formData.append('start', start);
+  formData.append('end', end);
+
+  try {
+    const res = await fetch('/api/split/execute', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Teilen fehlgeschlagen.');
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const downloadName = match ? match[1] : 'ausschnitt';
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    splitStatus.textContent = 'Fertig! Download gestartet.';
+    splitStatus.className = 'status-text ok';
+  } catch (err) {
+    splitStatus.textContent = 'Fehler: ' + err.message;
+    splitStatus.className = 'status-text err';
+  } finally {
+    splitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

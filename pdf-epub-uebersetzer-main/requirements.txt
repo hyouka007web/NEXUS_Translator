@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+deep-translator
+pypdf
+reportlab
+pdfplumber
+pytesseract
+Pillow
+
+gender-guesser
